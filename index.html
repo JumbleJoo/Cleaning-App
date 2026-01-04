@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>ChoreHarmony</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -42,6 +44,8 @@
         },
       };
     </script>
+
+    <!-- Styles -->
     <style>
       body {
         -webkit-tap-highlight-color: transparent;
@@ -67,20 +71,1074 @@
       input[type=range]:focus {
         outline: none; 
       }
+      /* Safe area padding for mobile */
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
     </style>
-  <script type="importmap">
+
+    <!-- Import Map -->
+    <script type="importmap">
 {
   "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+    "@google/genai": "https://esm.sh/@google/genai@0.1.1",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react": "https://esm.sh/react@^19.2.3",
     "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
-</head>
+    
+    <!-- Babel for in-browser transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
   <body class="bg-background text-textMain h-screen w-screen overflow-hidden selection:bg-primary selection:text-white">
     <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
+      import React, { useState, useEffect } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { 
+        Home, BarChart2, List, PlusCircle, Clock, Zap, UserCircle, 
+        Plus, Trash2, Edit2, Save, X, Check, Calendar, 
+        User as UserIcon, AlertCircle, TrendingUp, Scale, 
+        Sparkles, Image as ImageIcon, Download, Loader2, AlertTriangle, Trophy
+      } from 'lucide-react';
+      import { GoogleGenAI } from "@google/genai";
+
+      // --- POLYFILLS ---
+      window.process = { env: { API_KEY: '' } };
+
+      // --- TYPES ---
+      // (Types are stripped by Babel, but kept here for structural clarity if copied back to a TS environment)
+      
+      const COLORS = [
+        { label: 'Sky', value: 'sky-500', bg: 'bg-sky-500' },
+        { label: 'Emerald', value: 'emerald-500', bg: 'bg-emerald-500' },
+        { label: 'Rose', value: 'rose-500', bg: 'bg-rose-500' },
+        { label: 'Amber', value: 'amber-500', bg: 'bg-amber-500' },
+        { label: 'Violet', value: 'violet-500', bg: 'bg-violet-500' },
+      ];
+
+      // --- SERVICES: STORAGE ---
+      
+      const STORAGE_KEY = 'chore_harmony_v2_tesla';
+
+      const INITIAL_AREAS = [
+        { id: 'area-kitchen', name: 'Kitchen' },
+        { id: 'area-bathroom', name: 'Bathroom' },
+        { id: 'area-living', name: 'Living Room' },
+        { id: 'area-outside', name: 'Outside' },
+      ];
+
+      const INITIAL_USERS = [
+        { id: 'user-a', name: 'Alex', color: 'sky-500', avatar: 'A' },
+        { id: 'user-b', name: 'Sam', color: 'emerald-500', avatar: 'S' },
+      ];
+
+      const INITIAL_TASKS = [
+        {
+          id: 'task-1',
+          name: 'Wipe Counters',
+          areaId: 'area-kitchen',
+          frequencyDays: 1, 
+          effort: 1, 
+          lastCompleted: Date.now() - 86400000 * 2,
+          assignedTo: 'user-a',
+          description: 'Use the disinfectant spray.'
+        },
+        {
+          id: 'task-2',
+          name: 'Scrub Shower',
+          areaId: 'area-bathroom',
+          frequencyDays: 7, 
+          effort: 3, 
+          lastCompleted: Date.now() - 86400000 * 8,
+          assignedTo: 'user-b',
+          description: 'Don\'t forget the glass door.'
+        },
+        {
+          id: 'task-3',
+          name: 'Empty Trash',
+          areaId: 'area-kitchen',
+          frequencyDays: 3,
+          effort: 1,
+          lastCompleted: Date.now(),
+          assignedTo: 'user-a'
+        },
+        {
+          id: 'task-4',
+          name: 'Vacuum Rugs',
+          areaId: 'area-living',
+          frequencyDays: 5,
+          effort: 2,
+          lastCompleted: Date.now() - 86400000 * 3,
+          assignedTo: null // Shared task
+        },
+        {
+          id: 'task-5',
+          name: 'Mow Lawn',
+          areaId: 'area-outside',
+          frequencyDays: 14,
+          effort: 3,
+          lastCompleted: Date.now() - 86400000 * 10,
+          assignedTo: 'user-b'
+        }
+      ];
+
+      const getInitialState = () => {
+        return {
+          areas: INITIAL_AREAS,
+          tasks: INITIAL_TASKS,
+          users: INITIAL_USERS,
+          logs: [],
+          currentUser: 'user-a',
+        };
+      };
+
+      const loadState = () => {
+        try {
+          const serialized = localStorage.getItem(STORAGE_KEY);
+          if (!serialized) {
+            const initial = getInitialState();
+            saveState(initial);
+            return initial;
+          }
+          const parsed = JSON.parse(serialized);
+          if (!parsed.currentUser) {
+            parsed.currentUser = 'user-a';
+            parsed.users = INITIAL_USERS;
+          }
+          return parsed;
+        } catch (e) {
+          console.error("Failed to load state", e);
+          return getInitialState();
+        }
+      };
+
+      const saveState = (state) => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          console.error("Failed to save state", e);
+        }
+      };
+
+      const calculatePoints = (logs, userId, since) => {
+        return logs
+          .filter(l => l.userId === userId && l.timestamp >= since)
+          .reduce((acc, curr) => acc + curr.points, 0);
+      };
+
+      const getPointsForEffort = (effort) => {
+        switch(effort) {
+          case 1: return 1;
+          case 2: return 3;
+          case 3: return 5;
+          default: return 1;
+        }
+      };
+
+      // --- SERVICES: GEMINI ---
+
+      const checkApiKey = async () => {
+        if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+          return await window.aistudio.hasSelectedApiKey();
+        }
+        return false;
+      };
+
+      const promptApiKeySelection = async () => {
+        if (window.aistudio && window.aistudio.openSelectKey) {
+          await window.aistudio.openSelectKey();
+        } else {
+          alert("API Key selection is not supported in this environment.");
+        }
+      };
+
+      const generateCustomImage = async (prompt, aspectRatio, size) => {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+              imageConfig: { aspectRatio: aspectRatio, imageSize: size },
+            },
+          });
+
+          if (response.candidates && response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                const base64EncodeString = part.inlineData.data;
+                const mimeType = part.inlineData.mimeType || 'image/png';
+                return `data:${mimeType};base64,${base64EncodeString}`;
+              }
+            }
+          }
+          throw new Error("No image data found in response");
+        } catch (error) {
+          console.error("Gemini Image Gen Error:", error);
+          throw error;
+        }
+      };
+
+      // --- COMPONENTS ---
+
+      // 1. Navigation
+      const Navigation = ({ currentView, setView, onAdd }) => {
+        return (
+          <nav className="fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-lg border-t border-white/5 pb-safe pt-2 px-1 h-20 flex justify-between items-start z-50">
+            <button
+              onClick={() => setView('dashboard')}
+              className={`flex flex-col items-center justify-center w-12 sm:w-14 space-y-1.5 ${currentView === 'dashboard' ? 'text-primary' : 'text-textMuted'}`}
+            >
+              <Home size={22} strokeWidth={currentView === 'dashboard' ? 2.5 : 2} />
+              <span className="text-[10px] font-medium tracking-wide">Home</span>
+            </button>
+            
+            <button
+              onClick={() => setView('stats')}
+              className={`flex flex-col items-center justify-center w-12 sm:w-14 space-y-1.5 ${currentView === 'stats' ? 'text-primary' : 'text-textMuted'}`}
+            >
+              <BarChart2 size={22} strokeWidth={currentView === 'stats' ? 2.5 : 2} />
+              <span className="text-[10px] font-medium tracking-wide">Stats</span>
+            </button>
+
+            {/* Floating Action Button for Add - Centered */}
+            <div className="-mt-6 mx-1">
+                <button 
+                  onClick={onAdd}
+                  className="w-12 h-12 sm:w-14 sm:h-14 bg-primary rounded-full shadow-lg shadow-primary/40 flex items-center justify-center text-white active:scale-95 transition-transform"
+                >
+                    <PlusCircle size={28} />
+                </button>
+            </div>
+
+            <button
+              onClick={() => setView('history')}
+              className={`flex flex-col items-center justify-center w-12 sm:w-14 space-y-1.5 ${currentView === 'history' ? 'text-primary' : 'text-textMuted'}`}
+            >
+              <Clock size={22} strokeWidth={currentView === 'history' ? 2.5 : 2} />
+              <span className="text-[10px] font-medium tracking-wide">History</span>
+            </button>
+
+            <button
+              onClick={() => setView('manage')}
+              className={`flex flex-col items-center justify-center w-12 sm:w-14 space-y-1.5 ${currentView === 'manage' ? 'text-primary' : 'text-textMuted'}`}
+            >
+              <List size={22} strokeWidth={currentView === 'manage' ? 2.5 : 2} />
+              <span className="text-[10px] font-medium tracking-wide">Manage</span>
+            </button>
+          </nav>
+        );
+      };
+
+      // 2. TaskCard
+      const TaskCard = ({ task, onComplete, areaName, assignedUser }) => {
+        const points = getPointsForEffort(task.effort);
+        const now = Date.now();
+        const dueDate = task.lastCompleted + (task.frequencyDays * 86400 * 1000);
+        const totalDuration = task.frequencyDays * 86400 * 1000;
+        const elapsed = now - task.lastCompleted;
+        
+        const isOverdue = now > dueDate;
+        const daysOverdue = Math.floor((now - dueDate) / (86400 * 1000));
+        
+        const progressPercent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+        
+        let statusColor = "bg-primary";
+        if (progressPercent > 75) statusColor = "bg-yellow-500";
+        if (isOverdue) statusColor = "bg-danger";
+
+        return (
+          <div 
+            onClick={() => onComplete(task)}
+            className="relative w-full bg-surface rounded-xl p-4 mb-3 border border-white/5 active:bg-surfaceHighlight transition-colors duration-200 cursor-pointer"
+          >
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex-1 pr-4">
+                <div className="flex items-center space-x-2 mb-1">
+                   <span className="text-[10px] uppercase font-bold text-textMuted tracking-wider">{areaName}</span>
+                   {assignedUser && (
+                       <div className="flex items-center space-x-1 bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-textMuted">
+                          <UserIcon size={8} />
+                          <span>{assignedUser.name}</span>
+                       </div>
+                   )}
+                </div>
+                <h3 className="text-base font-semibold text-textMain leading-tight">{task.name}</h3>
+              </div>
+              
+              <div className="flex flex-col items-end">
+                  <span className="text-lg font-bold text-white">{points}<span className="text-xs font-normal text-textMuted ml-0.5">pts</span></span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between mt-3">
+               <div className="flex items-center text-xs text-textMuted">
+                  {isOverdue ? (
+                      <span className="text-danger flex items-center font-medium">
+                          <AlertCircle size={12} className="mr-1" />
+                          {daysOverdue > 0 ? `${daysOverdue}d Late` : 'Due Now'}
+                      </span>
+                  ) : (
+                      <span className="flex items-center">
+                          <Calendar size={12} className="mr-1 opacity-70" />
+                          Due in {Math.ceil((dueDate - now) / (86400 * 1000))}d
+                      </span>
+                  )}
+               </div>
+            </div>
+
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20 overflow-hidden rounded-b-xl">
+               <div 
+                  className={`h-full ${statusColor} transition-all duration-500`} 
+                  style={{ width: `${progressPercent}%` }}
+               />
+            </div>
+
+            {task.icon && (
+               <img src={task.icon} alt="" className="absolute right-0 bottom-0 w-20 h-20 opacity-5 mix-blend-overlay pointer-events-none" />
+            )}
+          </div>
+        );
+      };
+
+      // 3. StatsView
+      const StatsView = ({ users, logs, tasks }) => {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0,0,0,0);
+
+        const scores = users.map(u => ({
+          ...u,
+          currentScore: calculatePoints(logs, u.id, startOfMonth.getTime())
+        }));
+        
+        const totalScore = scores.reduce((acc, s) => acc + s.currentScore, 0);
+        
+        const getAllocatedWeeklyPoints = (userId) => {
+          return tasks
+            .filter(t => t.assignedTo === userId)
+            .reduce((acc, t) => {
+               const points = getPointsForEffort(t.effort);
+               const frequencyPerWeek = 7 / t.frequencyDays;
+               return acc + (points * frequencyPerWeek);
+            }, 0);
+        };
+
+        const workload = users.map(u => ({
+          ...u,
+          weeklyPoints: Math.round(getAllocatedWeeklyPoints(u.id))
+        }));
+        const totalWorkload = workload.reduce((acc, w) => acc + w.weeklyPoints, 0);
+
+        return (
+          <div className="px-6 py-6 pb-32 animate-fade-in space-y-6">
+            <h2 className="text-2xl font-bold text-white mb-2">Performance Center</h2>
+
+            <div className="bg-surface rounded-2xl p-6 border border-white/5 relative overflow-hidden">
+              <div className="flex items-center space-x-2 mb-6">
+                  <TrendingUp className="text-primary" size={20} />
+                  <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider">Monthly Output</h3>
+              </div>
+
+              <div className="flex justify-between items-end mb-4">
+                   {scores.map(user => (
+                       <div key={user.id} className="text-center flex-1">
+                           <div className="text-3xl font-bold text-white mb-1">{user.currentScore}</div>
+                           <div className="text-xs text-textMuted font-medium">{user.name}</div>
+                       </div>
+                   ))}
+              </div>
+
+              <div className="h-2 bg-black/40 rounded-full flex overflow-hidden">
+                  {scores.map((user, idx) => {
+                      const pct = totalScore === 0 ? 50 : (user.currentScore / totalScore) * 100;
+                      return (
+                          <div 
+                              key={user.id} 
+                              style={{ width: `${pct}%` }}
+                              className={`h-full ${idx === 0 ? 'bg-primary' : 'bg-accent'}`}
+                          />
+                      );
+                  })}
+              </div>
+            </div>
+
+            <div className="bg-surface rounded-2xl p-6 border border-white/5">
+              <div className="flex items-center space-x-2 mb-6">
+                  <Scale className="text-purple-400" size={20} />
+                  <h3 className="text-sm font-bold text-textMuted uppercase tracking-wider">Workload Fairness</h3>
+              </div>
+              
+              <p className="text-xs text-textMuted mb-4">
+                  Based on current task assignments, here is the expected weekly effort for each person.
+              </p>
+
+              <div className="space-y-4">
+                  {workload.map(user => {
+                      const pct = totalWorkload === 0 ? 0 : (user.weeklyPoints / totalWorkload) * 100;
+                      return (
+                          <div key={user.id}>
+                              <div className="flex justify-between text-xs mb-1 text-textMain">
+                                  <span>{user.name}</span>
+                                  <span className="font-mono">{user.weeklyPoints} pts/wk</span>
+                              </div>
+                              <div className="h-2 bg-black/40 rounded-full overflow-hidden">
+                                   <div 
+                                      style={{ width: `${pct}%` }}
+                                      className={`h-full ${user.id === 'user-a' ? 'bg-primary' : 'bg-accent'}`}
+                                   />
+                              </div>
+                          </div>
+                      )
+                  })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-surface rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center space-y-2">
+                   <div className="text-3xl font-bold text-white">{logs.length}</div>
+                   <div className="text-xs text-textMuted text-center">Tasks Done Total</div>
+                </div>
+                <div className="bg-surface rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center space-y-2">
+                   <div className="text-3xl font-bold text-white">{tasks.length}</div>
+                   <div className="text-xs text-textMuted text-center">Active Tasks</div>
+                </div>
+            </div>
+          </div>
+        );
+      };
+
+      // 4. HistoryView
+      const HistoryView = ({ logs, users }) => {
+        const sortedLogs = [...logs].sort((a, b) => b.timestamp - a.timestamp);
+
+        return (
+          <div className="px-6 py-6 pb-32 animate-fade-in">
+              <div className="flex items-center space-x-2 mb-6">
+                  <Clock className="text-primary" />
+                  <h2 className="text-2xl font-bold text-white">History</h2>
+              </div>
+
+              {sortedLogs.length === 0 ? (
+                  <div className="text-center text-textMuted py-10">
+                      <p>No chores completed yet.</p>
+                  </div>
+              ) : (
+                  <div className="space-y-4">
+                      {sortedLogs.map(log => {
+                          const date = new Date(log.timestamp);
+                          const user = users.find(u => u.id === log.userId);
+                          
+                          return (
+                              <div key={log.id} className="bg-surface p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                                  <div>
+                                      <h4 className="text-white font-medium">{log.taskName || 'Unnamed Task'}</h4>
+                                      <p className="text-xs text-textMuted">
+                                          {date.toLocaleDateString()} at {date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                      </p>
+                                  </div>
+                                  <div className="text-right">
+                                      <div className={`text-sm font-bold bg-white/5 px-2 py-1 rounded text-${user?.color.split('-')[0]}-400`}>
+                                          {user?.name}
+                                      </div>
+                                      <div className="text-xs text-textMuted mt-1">+{log.points} pts</div>
+                                  </div>
+                              </div>
+                          )
+                      })}
+                  </div>
+              )}
+          </div>
+        );
+      };
+
+      // 5. ManageView
+      const ManageView = ({ state, onUpdateUser, onDeleteArea }) => {
+        const [editingUserId, setEditingUserId] = useState(null);
+        const [editName, setEditName] = useState('');
+        const [editColor, setEditColor] = useState('');
+
+        const startEdit = (user) => {
+          setEditingUserId(user.id);
+          setEditName(user.name);
+          setEditColor(user.color);
+        };
+
+        const saveUser = () => {
+          if (editingUserId && editName.trim()) {
+            onUpdateUser(editingUserId, { name: editName, color: editColor });
+            setEditingUserId(null);
+          }
+        };
+
+        return (
+          <div className="px-6 py-6 pb-32 animate-fade-in space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold text-white">System Settings</h2>
+              <p className="text-sm text-textMuted">Configure profiles and zones.</p>
+            </div>
+
+            <section className="space-y-4">
+              <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Crew Profiles</h3>
+              <div className="space-y-3">
+                {state.users.map(user => {
+                  const isEditing = editingUserId === user.id;
+                  return (
+                    <div key={user.id} className="bg-surface border border-white/5 rounded-xl p-4 transition-all">
+                      {isEditing ? (
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                             <span className="text-sm font-bold text-textMuted">Editing {user.name}</span>
+                             <button onClick={() => setEditingUserId(null)} className="text-textMuted hover:text-white"><X size={16}/></button>
+                          </div>
+                          
+                          <div className="space-y-1">
+                              <label className="text-[10px] uppercase text-textMuted">Display Name</label>
+                              <input 
+                                  type="text" 
+                                  value={editName}
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-primary"
+                              />
+                          </div>
+
+                          <div className="space-y-1">
+                              <label className="text-[10px] uppercase text-textMuted">Theme Color</label>
+                              <div className="flex space-x-3">
+                                  {COLORS.map(c => (
+                                      <button
+                                          key={c.value}
+                                          onClick={() => setEditColor(c.value)}
+                                          className={`w-8 h-8 rounded-full ${c.bg} border-2 transition-transform ${editColor === c.value ? 'border-white scale-110' : 'border-transparent opacity-50'}`}
+                                      />
+                                  ))}
+                              </div>
+                          </div>
+
+                          <button 
+                              onClick={saveUser}
+                              className="w-full bg-primary text-white font-bold py-3 rounded-lg flex items-center justify-center space-x-2 active:scale-95 transition-transform"
+                          >
+                              <Save size={18} />
+                              <span>Save Changes</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                             <div className={`w-10 h-10 rounded-full bg-${user.color.split('-')[0]}-500/20 text-${user.color.split('-')[0]}-500 flex items-center justify-center font-bold border border-${user.color.split('-')[0]}-500/50`}>
+                                 {user.name.charAt(0)}
+                             </div>
+                             <div>
+                                 <h4 className="text-white font-bold">{user.name}</h4>
+                                 <p className="text-xs text-textMuted">Player {user.id === 'user-a' ? 'A' : 'B'}</p>
+                             </div>
+                          </div>
+                          <button 
+                              onClick={() => startEdit(user)}
+                              className="p-2 bg-white/5 rounded-full text-textMuted hover:text-white active:scale-95"
+                          >
+                              <Edit2 size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Zones (Areas)</h3>
+              <div className="grid grid-cols-1 gap-3">
+                 {state.areas.map(area => {
+                     const taskCount = state.tasks.filter(t => t.areaId === area.id).length;
+                     return (
+                         <div key={area.id} className="flex items-center justify-between bg-surface border border-white/5 rounded-xl p-3 px-4">
+                             <div className="flex items-center space-x-3">
+                                  <div className="text-lg">
+                                      {area.id.includes('kitchen') ? '🍳' : area.id.includes('bath') ? '🛁' : area.id.includes('outside') ? '🌳' : area.id.includes('living') ? '🛋️' : '🏠'}
+                                  </div>
+                                  <span className="text-sm font-medium text-white">{area.name}</span>
+                             </div>
+                             {taskCount === 0 && (
+                                 <button 
+                                      onClick={() => onDeleteArea(area.id)}
+                                      className="text-danger opacity-50 hover:opacity-100 p-2"
+                                  >
+                                     <Trash2 size={16} />
+                                 </button>
+                             )}
+                             {taskCount > 0 && (
+                                 <span className="text-xs text-textMuted">{taskCount} active</span>
+                             )}
+                         </div>
+                     )
+                 })}
+              </div>
+              <p className="text-xs text-textMuted text-center pt-2">
+                  Create new zones when adding tasks. Zones with 0 tasks can be deleted.
+              </p>
+            </section>
+          </div>
+        );
+      };
+
+      // 6. ImageGenerator
+      const ImageGenerator = () => {
+        const [prompt, setPrompt] = useState('');
+        const [aspectRatio, setAspectRatio] = useState('1:1');
+        const [size, setSize] = useState('1K');
+        const [loading, setLoading] = useState(false);
+        const [generatedImage, setGeneratedImage] = useState(null);
+        const [error, setError] = useState(null);
+        const [hasKey, setHasKey] = useState(false);
+
+        useEffect(() => {
+          checkApiKey().then(setHasKey);
+        }, []);
+
+        const handleConnect = async () => {
+          try {
+              await promptApiKeySelection();
+              setHasKey(true);
+          } catch (e) {
+              console.error(e);
+              setError("Failed to connect API Key.");
+          }
+        };
+
+        const handleGenerate = async () => {
+          if (!prompt.trim()) return;
+          setLoading(true);
+          setError(null);
+          setGeneratedImage(null);
+
+          try {
+              if (!hasKey) {
+                   const keyPresent = await checkApiKey();
+                   if (!keyPresent) await handleConnect();
+              }
+              const result = await generateCustomImage(prompt, aspectRatio, size);
+              setGeneratedImage(result);
+          } catch (err) {
+              setError(err.message || "Failed to generate image.");
+              if (err.message && err.message.includes("Requested entity was not found")) {
+                  setHasKey(false);
+                  setError("API Key invalid or expired. Please reconnect.");
+              }
+          } finally {
+              setLoading(false);
+          }
+        };
+
+        if (!hasKey) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
+                    <div className="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 mb-4">
+                        <Sparkles size={40} />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-800">Unlock Creative Tools</h2>
+                    <p className="text-slate-500">To generate custom icons, connect your Google Gemini API key.</p>
+                    <button 
+                      onClick={handleConnect}
+                      className="w-full py-4 bg-teal-600 text-white rounded-xl font-bold shadow-lg shadow-teal-200 active:scale-95 transition-all"
+                    >
+                        Connect API Key
+                    </button>
+                </div>
+            )
+        }
+
+        return (
+          <div className="p-6 pb-32">
+            <div className="flex items-center space-x-2 mb-6">
+              <Sparkles className="text-teal-500" />
+              <h1 className="text-2xl font-bold text-slate-800">Studio</h1>
+            </div>
+            
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+              <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-slate-400">Prompt</label>
+                  <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder="A cute 3D icon of a washing machine..."
+                      className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 min-h-[100px] resize-none"
+                  />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-slate-400">Aspect Ratio</label>
+                      <select 
+                          value={aspectRatio} 
+                          onChange={(e) => setAspectRatio(e.target.value)}
+                          className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none"
+                      >
+                          {["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"].map(r => (
+                              <option key={r} value={r}>{r}</option>
+                          ))}
+                      </select>
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-slate-400">Size</label>
+                      <select 
+                          value={size} 
+                          onChange={(e) => setSize(e.target.value)}
+                          className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none"
+                      >
+                          {["1K", "2K", "4K"].map(s => (
+                              <option key={s} value={s}>{s}</option>
+                          ))}
+                      </select>
+                   </div>
+              </div>
+
+              <button
+                  onClick={handleGenerate}
+                  disabled={loading || !prompt}
+                  className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center space-x-2 shadow-lg transition-all
+                      ${loading || !prompt ? 'bg-slate-300 shadow-none cursor-not-allowed' : 'bg-teal-600 shadow-teal-200 active:scale-95 hover:bg-teal-700'}`}
+              >
+                  {loading ? <Loader2 className="animate-spin" /> : <Sparkles size={20} />}
+                  <span>{loading ? "Dreaming..." : "Generate"}</span>
+              </button>
+
+              {error && (
+                  <div className="p-4 bg-red-50 text-red-600 rounded-xl flex items-center text-sm">
+                      <AlertTriangle size={18} className="mr-2 flex-shrink-0" />
+                      {error}
+                  </div>
+              )}
+
+              {generatedImage && (
+                  <div className="mt-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="rounded-2xl overflow-hidden shadow-lg border border-slate-100 relative group">
+                          <img src={generatedImage} alt="Generated" className="w-full h-auto object-cover" />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <a 
+                                  href={generatedImage} 
+                                  download={`gemini-${Date.now()}.png`}
+                                  className="p-3 bg-white rounded-full text-slate-800 hover:scale-110 transition-transform"
+                              >
+                                  <Download size={24} />
+                              </a>
+                          </div>
+                      </div>
+                  </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      // 7. CompleteTaskModal
+      const CompleteTaskModal = ({ task, users, onConfirm, onCancel }) => {
+        if (!task) return null;
+        const points = getPointsForEffort(task.effort);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-slide-up">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800">Who did it?</h3>
+                    <p className="text-sm text-slate-500">Completing: <span className="font-semibold text-teal-600">{task.name}</span></p>
+                </div>
+                <button onClick={onCancel} className="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {users.map((user) => (
+                  <button
+                    key={user.id}
+                    onClick={() => onConfirm(user.id)}
+                    className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 transition-all active:scale-95
+                      ${user.id === 'user-a' 
+                        ? 'border-teal-100 bg-teal-50 text-teal-700 hover:border-teal-300' 
+                        : 'border-orange-100 bg-orange-50 text-orange-700 hover:border-orange-300'
+                      }`}
+                  >
+                    <div className={`w-12 h-12 rounded-full mb-3 flex items-center justify-center text-xl font-bold text-white
+                      ${user.id === 'user-a' ? 'bg-teal-400' : 'bg-orange-400'}`}>
+                      {user.name.charAt(0)}
+                    </div>
+                    <span className="font-bold">{user.name}</span>
+                    <span className="text-xs opacity-70 mt-1">+{points} pts</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // 8. TaskForm
+      const TaskForm = ({ onSave, onCancel, areas, users, initialData }) => {
+        const [name, setName] = useState(initialData?.name || '');
+        const [areaId, setAreaId] = useState(initialData?.areaId || (areas.length > 0 ? areas[0].id : ''));
+        const [isCustomArea, setIsCustomArea] = useState(false);
+        const [customAreaName, setCustomAreaName] = useState('');
+        const [frequency, setFrequency] = useState(initialData?.frequencyDays || 7);
+        const [effort, setEffort] = useState(initialData?.effort || 1);
+        const [assignedTo, setAssignedTo] = useState(initialData?.assignedTo || null);
+
+        const handleSubmit = () => {
+          if (!name.trim()) return;
+          if (isCustomArea && !customAreaName.trim()) return;
+          onSave({
+            name,
+            areaId: isCustomArea ? 'NEW_AREA_PLACEHOLDER' : areaId,
+            frequencyDays: frequency,
+            effort,
+            assignedTo,
+          }, isCustomArea ? customAreaName : undefined);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-surface w-full max-w-sm rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-slide-up">
+              <div className="flex justify-between items-center p-4 border-b border-white/5 bg-surfaceHighlight/30">
+                <h3 className="text-lg font-bold text-white">{initialData ? 'Edit Task' : 'New Task'}</h3>
+                <button onClick={onCancel} className="p-2 text-textMuted hover:text-white"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+                  <div className="space-y-2">
+                      <label className="text-xs uppercase font-bold text-textMuted">Task Name</label>
+                      <input 
+                          type="text" 
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="e.g. Water Plants"
+                          autoFocus
+                          className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-primary placeholder:text-textMuted/30"
+                      />
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-xs uppercase font-bold text-textMuted">Zone / Area</label>
+                      {!isCustomArea ? (
+                          <div className="relative">
+                              <select
+                                  value={areaId}
+                                  onChange={(e) => {
+                                      if (e.target.value === 'CUSTOM_NEW') setIsCustomArea(true);
+                                      else setAreaId(e.target.value);
+                                  }}
+                                  className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white appearance-none focus:outline-none focus:border-primary"
+                              >
+                                  {areas.map(area => (
+                                      <option key={area.id} value={area.id} className="bg-surface text-white">{area.name}</option>
+                                  ))}
+                                  <option value="CUSTOM_NEW" className="bg-surface text-primary font-bold">+ Create New Zone...</option>
+                              </select>
+                              <div className="absolute right-3 top-3.5 pointer-events-none text-textMuted">
+                                  <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                              </div>
+                          </div>
+                      ) : (
+                          <div className="flex items-center space-x-2 animate-fade-in">
+                              <input 
+                                  type="text" 
+                                  value={customAreaName}
+                                  onChange={(e) => setCustomAreaName(e.target.value)}
+                                  placeholder="Name of new zone..."
+                                  className="flex-1 bg-black/20 border border-primary rounded-lg p-3 text-white focus:outline-none"
+                              />
+                              <button onClick={() => setIsCustomArea(false)} className="p-3 bg-white/5 rounded-lg text-textMuted hover:text-white"><X size={18} /></button>
+                          </div>
+                      )}
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-xs uppercase font-bold text-textMuted flex justify-between">
+                          <span>Frequency</span>
+                          <span className="text-primary font-mono">{frequency} days</span>
+                      </label>
+                      <div className="bg-black/20 rounded-lg p-2 border border-white/5">
+                          <input type="range" min="1" max="60" value={frequency} onChange={(e) => setFrequency(parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary" />
+                      </div>
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-xs uppercase font-bold text-textMuted">Effort Level</label>
+                      <div className="flex space-x-3">
+                          {[1, 2, 3].map((lvl) => (
+                              <button
+                                  key={lvl}
+                                  onClick={() => setEffort(lvl)}
+                                  className={`flex-1 p-3 rounded-lg border flex flex-col items-center justify-center transition-all ${effort === lvl ? 'bg-primary/20 border-primary text-primary shadow-lg shadow-primary/10' : 'bg-transparent border-white/10 text-textMuted hover:bg-white/5'}`}
+                              >
+                                  <span className="text-lg mb-1">{Array(lvl).fill('⚡').join('')}</span>
+                                  <span className="text-[10px] uppercase font-bold">{lvl === 1 ? 'Easy' : lvl === 2 ? 'Medium' : 'Hard'}</span>
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-xs uppercase font-bold text-textMuted">Assign To</label>
+                      <div className="grid grid-cols-3 gap-2">
+                          <button onClick={() => setAssignedTo(null)} className={`p-3 rounded-lg border text-xs font-bold transition-all truncate ${assignedTo === null ? 'bg-white/10 border-white text-white' : 'bg-transparent border-white/10 text-textMuted hover:bg-white/5'}`}>Unassigned</button>
+                          {users.map(u => (
+                               <button key={u.id} onClick={() => setAssignedTo(u.id)} className={`p-3 rounded-lg border text-xs font-bold transition-all truncate ${assignedTo === u.id ? `bg-${u.color.split('-')[0]}-500/20 border-${u.color.split('-')[0]}-500 text-${u.color.split('-')[0]}-500` : 'bg-transparent border-white/10 text-textMuted hover:bg-white/5'}`}>{u.name}</button>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+              <div className="p-4 border-t border-white/5 flex space-x-4 bg-surfaceHighlight/10">
+                  <button onClick={handleSubmit} className="flex-1 bg-primary text-white font-bold py-3 rounded-xl shadow-lg shadow-primary/20 active:scale-95 transition-transform flex items-center justify-center group">
+                      <Check size={20} className="mr-2 group-hover:scale-110 transition-transform" /> 
+                      {initialData ? 'Save Changes' : 'Create Task'}
+                  </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // --- MAIN APP ---
+      const App = () => {
+        const [state, setState] = useState(loadState());
+        const [view, setView] = useState('dashboard');
+        const [selectedTask, setSelectedTask] = useState(null);
+        const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+        const [filterMode, setFilterMode] = useState('all');
+
+        useEffect(() => {
+          saveState(state);
+        }, [state]);
+
+        const handleTaskClick = (task) => setSelectedTask(task);
+
+        const handleConfirmCompletion = (userId) => {
+          if (!selectedTask) return;
+          const points = selectedTask.effort === 1 ? 1 : selectedTask.effort === 2 ? 3 : 5;
+          const newLog = {
+            id: Date.now().toString(),
+            taskId: selectedTask.id,
+            taskName: selectedTask.name,
+            userId,
+            timestamp: Date.now(),
+            points
+          };
+          const updatedTasks = state.tasks.map(t => 
+            t.id === selectedTask.id ? { ...t, lastCompleted: Date.now() } : t
+          );
+          setState(prev => ({ ...prev, tasks: updatedTasks, logs: [...prev.logs, newLog] }));
+          setSelectedTask(null);
+        };
+
+        const handleCreateTask = (newTaskData, newAreaName) => {
+          let finalAreaId = newTaskData.areaId;
+          if (newAreaName) {
+              const newAreaId = `area-${Date.now()}`;
+              const newArea = { id: newAreaId, name: newAreaName };
+              setState(prev => ({ ...prev, areas: [...prev.areas, newArea] }));
+              finalAreaId = newAreaId;
+          }
+          const newTask = {
+              id: `task-${Date.now()}`,
+              lastCompleted: Date.now() - (newTaskData.frequencyDays * 86400 * 1000), 
+              ...newTaskData,
+              areaId: finalAreaId
+          };
+          setState(prev => ({ ...prev, tasks: [...prev.tasks, newTask] }));
+          setIsTaskFormOpen(false);
+        };
+
+        const handleUpdateUser = (userId, updates) => {
+            setState(prev => ({ ...prev, users: prev.users.map(u => u.id === userId ? { ...u, ...updates } : u) }));
+        };
+
+        const handleDeleteArea = (areaId) => {
+            const hasTasks = state.tasks.some(t => t.areaId === areaId);
+            if (hasTasks) {
+                alert("Cannot delete zone containing active tasks.");
+                return;
+            }
+            setState(prev => ({ ...prev, areas: prev.areas.filter(a => a.id !== areaId) }));
+        };
+
+        const switchUser = () => {
+            const nextUser = state.currentUser === 'user-a' ? 'user-b' : 'user-a';
+            setState(prev => ({...prev, currentUser: nextUser}));
+        };
+
+        const currentUser = state.users.find(u => u.id === state.currentUser);
+
+        const filteredTasks = state.tasks
+          .filter(t => {
+              if (filterMode === 'mine') {
+                  return t.assignedTo === state.currentUser || t.assignedTo === null;
+              }
+              return true;
+          })
+          .sort((a, b) => {
+              const aDue = a.lastCompleted + (a.frequencyDays * 86400 * 1000);
+              const bDue = b.lastCompleted + (b.frequencyDays * 86400 * 1000);
+              return aDue - bDue;
+          });
+
+        return (
+          <div className="h-full w-full overflow-y-auto no-scrollbar bg-background">
+            <main className="max-w-md mx-auto min-h-screen relative">
+              <header className="pt-6 pb-4 px-6 flex justify-between items-center bg-background/80 backdrop-blur-md sticky top-0 z-40 border-b border-white/5">
+                <div className="flex items-center space-x-2">
+                  <Zap className="text-primary" size={24} fill="currentColor" />
+                  <h1 className="text-xl font-black text-white tracking-tight uppercase">Chore<span className="text-primary">OS</span></h1>
+                </div>
+                <button onClick={switchUser} className="flex items-center space-x-2 bg-surface px-3 py-1.5 rounded-full border border-white/10 active:bg-surfaceHighlight transition-colors">
+                  <div className={`w-2 h-2 rounded-full ${currentUser?.id === 'user-a' ? 'bg-primary' : 'bg-accent'}`}></div>
+                  <span className="text-xs font-bold text-textMuted uppercase">{currentUser?.name}</span>
+                  <UserCircle size={16} className="text-textMuted" />
+                </button>
+              </header>
+
+              {view === 'dashboard' && (
+                <div className="px-6 py-4 pb-32 space-y-6 animate-fade-in">
+                  <div className="flex bg-surface rounded-lg p-1 border border-white/5">
+                      <button onClick={() => setFilterMode('all')} className={`flex-1 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${filterMode === 'all' ? 'bg-white/10 text-white shadow-sm' : 'text-textMuted'}`}>All Tasks</button>
+                      <button onClick={() => setFilterMode('mine')} className={`flex-1 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${filterMode === 'mine' ? 'bg-white/10 text-white shadow-sm' : 'text-textMuted'}`}>My Tasks</button>
+                  </div>
+                  <section className="space-y-1">
+                    {filteredTasks.map(task => (
+                      <TaskCard key={task.id} task={task} areaName={state.areas.find(a => a.id === task.areaId)?.name || 'Unknown'} assignedUser={state.users.find(u => u.id === task.assignedTo)} onComplete={handleTaskClick} />
+                    ))}
+                    {filteredTasks.length === 0 && (
+                        <div className="py-20 text-center opacity-50">
+                            <p className="text-textMuted">No tasks due.</p>
+                            <button onClick={() => setIsTaskFormOpen(true)} className="mt-2 text-primary text-sm font-bold">Add One +</button>
+                        </div>
+                    )}
+                  </section>
+                </div>
+              )}
+
+              {view === 'stats' && <StatsView users={state.users} logs={state.logs} tasks={state.tasks} />}
+              {view === 'history' && <HistoryView logs={state.logs} users={state.users} />}
+              {view === 'manage' && <ManageView state={state} onUpdateUser={handleUpdateUser} onDeleteArea={handleDeleteArea} />}
+              {view === 'generator' && <ImageGenerator />}
+
+            </main>
+
+            <CompleteTaskModal task={selectedTask} users={state.users} onConfirm={handleConfirmCompletion} onCancel={() => setSelectedTask(null)} />
+            {isTaskFormOpen && <TaskForm areas={state.areas} users={state.users} onSave={handleCreateTask} onCancel={() => setIsTaskFormOpen(false)} />}
+            
+            <Navigation currentView={view} setView={setView} onAdd={() => setIsTaskFormOpen(true)} />
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
   </body>
 </html>
