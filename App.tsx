@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { loadState, saveState } from './services/storageService';
-import { AppState, Task } from './types';
+import { AppState, Task, User, Area } from './types';
 import TaskCard from './components/TaskCard';
 import CompleteTaskModal from './components/CompleteTaskModal';
 import Navigation from './components/Navigation';
 import ImageGenerator from './components/ImageGenerator';
 import StatsView from './components/StatsView';
 import HistoryView from './components/HistoryView';
+import ManageView from './components/ManageView';
 import TaskForm from './components/TaskForm';
 import { Zap, UserCircle, Plus } from 'lucide-react';
 
@@ -54,11 +55,30 @@ const App: React.FC = () => {
     setSelectedTask(null);
   };
 
-  const handleCreateTask = (newTaskData: any) => {
+  const handleCreateTask = (newTaskData: any, newAreaName?: string) => {
+    let finalAreaId = newTaskData.areaId;
+
+    // Handle new area creation
+    if (newAreaName) {
+        const newAreaId = `area-${Date.now()}`;
+        const newArea: Area = {
+            id: newAreaId,
+            name: newAreaName
+        };
+        
+        setState(prev => ({
+            ...prev,
+            areas: [...prev.areas, newArea]
+        }));
+        
+        finalAreaId = newAreaId;
+    }
+
     const newTask: Task = {
         id: `task-${Date.now()}`,
         lastCompleted: Date.now() - (newTaskData.frequencyDays * 86400 * 1000), // Set as due immediately-ish
-        ...newTaskData
+        ...newTaskData,
+        areaId: finalAreaId
     };
     
     setState(prev => ({
@@ -66,6 +86,26 @@ const App: React.FC = () => {
         tasks: [...prev.tasks, newTask]
     }));
     setIsTaskFormOpen(false);
+  };
+
+  const handleUpdateUser = (userId: string, updates: Partial<User>) => {
+      setState(prev => ({
+          ...prev,
+          users: prev.users.map(u => u.id === userId ? { ...u, ...updates } : u)
+      }));
+  };
+
+  const handleDeleteArea = (areaId: string) => {
+      // Safety check: ensure no tasks are using this area
+      const hasTasks = state.tasks.some(t => t.areaId === areaId);
+      if (hasTasks) {
+          alert("Cannot delete zone containing active tasks.");
+          return;
+      }
+      setState(prev => ({
+          ...prev,
+          areas: prev.areas.filter(a => a.id !== areaId)
+      }));
   };
 
   const switchUser = () => {
@@ -145,7 +185,8 @@ const App: React.FC = () => {
               ))}
               {filteredTasks.length === 0 && (
                   <div className="py-20 text-center opacity-50">
-                      <p>All clear.</p>
+                      <p className="text-textMuted">No tasks due.</p>
+                      <button onClick={() => setIsTaskFormOpen(true)} className="mt-2 text-primary text-sm font-bold">Add One +</button>
                   </div>
               )}
             </section>
@@ -161,37 +202,11 @@ const App: React.FC = () => {
         )}
 
         {view === 'manage' && (
-           <div className="px-6 py-6 pb-32 space-y-6 animate-fade-in">
-             <div className="flex justify-between items-center mb-4">
-                 <h2 className="text-2xl font-bold text-white">Manage</h2>
-                 <button 
-                    onClick={() => setView('generator')} 
-                    className="text-xs text-primary font-bold uppercase flex items-center bg-surface px-3 py-2 rounded-lg border border-white/5"
-                >
-                    <Plus size={14} className="mr-1" /> Icons
-                </button>
-             </div>
-             
-             {/* Areas List (Control Panel Style) */}
-             <div className="grid grid-cols-1 gap-3">
-               {state.areas.map(area => {
-                 const taskCount = state.tasks.filter(t => t.areaId === area.id).length;
-                 return (
-                   <div key={area.id} className="bg-surface p-4 rounded-xl border border-white/5 flex items-center justify-between group active:scale-[0.99] transition-transform">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-xl">
-                            {area.id.includes('kitchen') ? '🍳' : area.id.includes('bath') ? '🛁' : area.id.includes('outside') ? '🌳' : '🛋️'}
-                        </div>
-                        <div>
-                           <h3 className="text-sm font-bold text-textMain">{area.name}</h3>
-                           <p className="text-xs text-textMuted">{taskCount} tasks configured</p>
-                        </div>
-                      </div>
-                   </div>
-                 )
-               })}
-             </div>
-           </div>
+           <ManageView 
+              state={state} 
+              onUpdateUser={handleUpdateUser} 
+              onDeleteArea={handleDeleteArea}
+           />
         )}
 
         {view === 'generator' && (
